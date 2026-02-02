@@ -1,9 +1,9 @@
 
 const CACHE_NAME = 'taskino-v1';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/index.tsx',
+  './',
+  './index.html',
+  './index.tsx',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;400;700&display=swap'
 ];

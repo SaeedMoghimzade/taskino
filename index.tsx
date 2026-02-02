@@ -15,10 +15,11 @@ root.render(
   </React.StrictMode>
 );
 
-// PWA Service Worker Registration
+// PWA Service Worker Registration - Fixed path for GitHub Pages
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
+    // Using relative path './sw.js' instead of '/sw.js'
+    navigator.serviceWorker.register('./sw.js').catch(err => {
       console.log('SW registration failed: ', err);
     });
   });
