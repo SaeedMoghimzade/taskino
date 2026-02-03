@@ -190,6 +190,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
                   )}
                 </div>
 
+                {task.link && (
+                  <div className="bg-indigo-50 p-3 rounded-2xl border border-indigo-100 shadow-sm flex items-center justify-between group/link">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-indigo-200">
+                        <ExternalLink className="w-4 h-4 text-indigo-600" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">لینک مرتبط</span>
+                        <a href={task.link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-700 truncate block hover:underline">
+                          {task.link}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {task.reminder && (
                   <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between group/rem">
                     <div className="flex items-center gap-3">

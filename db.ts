@@ -39,16 +39,18 @@ export const db = new Dexie('TaskinoDB') as Dexie & {
   priorities: Table<PriorityLabel>;
 };
 
-// Increment version to 5 to accommodate manual order field
-db.version(5).stores({
-  tasks: '++id, categoryId, priority, deadline, *labels, createdAt, reminder, order',
+// Version 6: Added 'completed' to indexes to allow fast filtering
+db.version(6).stores({
+  tasks: '++id, categoryId, priority, deadline, *labels, createdAt, reminder, order, completed',
   categories: '++id, name',
   priorities: 'id'
 }).upgrade(async tx => {
-  // Logic to populate 'order' for existing tasks if any
   return tx.table('tasks').toCollection().modify(task => {
     if (task.order === undefined) {
       task.order = task.createdAt || Date.now();
+    }
+    if (task.completed === undefined) {
+      task.completed = false;
     }
   });
 });
