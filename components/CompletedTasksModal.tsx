@@ -11,8 +11,10 @@ interface CompletedTasksModalProps {
 }
 
 export const CompletedTasksModal: React.FC<CompletedTasksModalProps> = ({ onClose, onRestore, categories }) => {
+  // Fix: Cast 'true' to any because Dexie's IndexableType does not strictly include boolean in its type definition, 
+  // though it is supported at runtime in modern browsers.
   const completedTasks = useLiveQuery(() => 
-    db.tasks.where('completed').equals(true).reverse().sortBy('createdAt')
+    db.tasks.where('completed').equals(true as any).reverse().sortBy('createdAt')
   );
 
   const categoryMap = useMemo(() => {

@@ -197,9 +197,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
                         <ExternalLink className="w-4 h-4 text-indigo-600" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">لینک مرتبط</span>
-                        <a href={task.link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-700 truncate block hover:underline">
-                          {task.link}
+                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">پیوند مرتبط</span>
+                        <a 
+                          href={task.link.startsWith('http') ? task.link : `https://${task.link}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-900 underline decoration-indigo-300 underline-offset-4"
+                        >
+                          مشاهده منبع کار
+                          <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
                     </div>
