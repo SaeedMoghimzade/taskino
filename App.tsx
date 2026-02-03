@@ -2,20 +2,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, Task, Category, seedDatabase } from './db';
-import { Plus, Filter, Search, Settings, CheckCircle, Sliders, MoreHorizontal, Bell, BellRing, Clock, Calendar, CheckCheck } from 'lucide-react';
+import { Plus, Filter, Search, Settings, CheckCircle, Sliders, MoreHorizontal, Bell, BellRing, Clock, Calendar } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TaskModal } from './components/TaskModal';
 import { TaskCard } from './components/TaskCard';
 import { CategoryManager } from './components/CategoryManager';
 import { PriorityManager } from './components/PriorityManager';
-import { CompletedTasksModal } from './components/CompletedTasksModal';
 
 const App: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isPriorityModalOpen, setIsPriorityModalOpen] = useState(false);
-  const [isCompletedModalOpen, setIsCompletedModalOpen] = useState(false);
   const [isRemindersOpen, setIsRemindersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLabel, setFilterLabel] = useState<string | null>(null);
@@ -64,11 +62,16 @@ const App: React.FC = () => {
     
     return categories.map(cat => {
       const catTasks = tasks.filter(t => 
-        !t.completed && // Only show non-completed tasks in columns
         t.categoryId === cat.id &&
         t.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
         (!filterLabel || t.labels.includes(filterLabel))
-      ).sort((a, b) => (a.order || 0) - (b.order || 0));
+      ).sort((a, b) => {
+        // First sort by completion status, then by order
+        if (a.completed !== b.completed) {
+          return a.completed ? 1 : -1;
+        }
+        return (a.order || 0) - (b.order || 0);
+      });
       
       return { ...cat, tasks: catTasks };
     });
@@ -114,7 +117,7 @@ const App: React.FC = () => {
 
     if (targetOrder !== undefined && tasks) {
       const columnTasks = tasks
-        .filter(t => !t.completed && t.categoryId === categoryId && t.id !== taskId)
+        .filter(t => t.categoryId === categoryId && t.id !== taskId)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       
       const targetIndex = columnTasks.findIndex(t => t.order === targetOrder);
@@ -183,15 +186,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setIsCompletedModalOpen(true)}
-            className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-2"
-            title="کارهای انجام شده"
-          >
-            <CheckCheck className="w-5 h-5" />
-            <span className="hidden lg:inline text-xs font-bold">انجام شده‌ها</span>
-          </button>
-
           <div className="relative" ref={remindersRef}>
             <button 
               onClick={() => setIsRemindersOpen(!isRemindersOpen)}
@@ -325,7 +319,7 @@ const App: React.FC = () => {
                   group.tasks.map((task) => (
                     <div 
                       key={task.id}
-                      draggable
+                      draggable={!task.completed}
                       onDragStart={(e) => onDragStart(e, task.id!)}
                       onDragEnd={onDragEnd}
                       onDragOver={(e) => {
@@ -389,13 +383,6 @@ const App: React.FC = () => {
       {isPriorityModalOpen && (
         <PriorityManager 
           onClose={() => setIsPriorityModalOpen(false)} 
-        />
-      )}
-      {isCompletedModalOpen && (
-        <CompletedTasksModal 
-          categories={categories || []}
-          onRestore={(id) => toggleTaskStatus(id, true)}
-          onClose={() => setIsCompletedModalOpen(false)} 
         />
       )}
     </div>
