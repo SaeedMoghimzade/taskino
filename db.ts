@@ -22,6 +22,16 @@ export interface Task {
   reminder?: string; // ISO string
 }
 
+export interface Event {
+  id?: number;
+  title: string;
+  date: string; // ISO string
+  duration: number; // In minutes
+  link?: string;
+  notes: Note[];
+  createdAt: number;
+}
+
 export interface Category {
   id?: number;
   name: string;
@@ -37,20 +47,25 @@ export const db = new Dexie('TaskinoDB') as Dexie & {
   tasks: Table<Task>;
   categories: Table<Category>;
   priorities: Table<PriorityLabel>;
+  events: Table<Event>;
 };
 
-// Version 6: Added 'completed' to indexes to allow fast filtering
-db.version(6).stores({
+// Version 8: Migrated Event notes to Note[]
+db.version(8).stores({
   tasks: '++id, categoryId, priority, deadline, *labels, createdAt, reminder, order, completed',
   categories: '++id, name',
-  priorities: 'id'
+  priorities: 'id',
+  events: '++id, title, date, createdAt'
 }).upgrade(async tx => {
-  return tx.table('tasks').toCollection().modify(task => {
-    if (task.order === undefined) {
-      task.order = task.createdAt || Date.now();
-    }
-    if (task.completed === undefined) {
-      task.completed = false;
+  const eventsTable = tx.table('events');
+  return eventsTable.toCollection().modify(event => {
+    if (typeof event.notes === 'string' || !event.notes) {
+      const oldNote = event.notes;
+      event.notes = oldNote ? [{
+        id: crypto.randomUUID(),
+        content: oldNote,
+        createdAt: event.createdAt || Date.now()
+      }] : [];
     }
   });
 });

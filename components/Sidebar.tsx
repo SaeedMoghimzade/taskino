@@ -1,43 +1,63 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Note, Task } from '../db';
-import { X, Send, History, Clock, Calendar, Edit3, Link as LinkIcon, ExternalLink, Save, Check, Bell, BellRing, Trash2, Tag, Sliders } from 'lucide-react';
+import { db, Note, Task, Event } from '../db';
+import { X, Send, History, Clock, Calendar, Edit3, Link as LinkIcon, ExternalLink, Check, Bell, BellRing, Trash2, Tag, Sliders, Timer, Video } from 'lucide-react';
 import { JalaliDatePicker } from './JalaliInputs';
 
 interface SidebarProps {
-  taskId: number;
+  taskId?: number;
+  eventId?: number;
   onClose: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
-  const task = useLiveQuery(() => db.tasks.get(taskId), [taskId]);
+export const Sidebar: React.FC<SidebarProps> = ({ taskId, eventId, onClose }) => {
+  const isEvent = !!eventId;
+  const currentId = (isEvent ? eventId : taskId) as number;
+
+  const task = useLiveQuery(() => taskId ? db.tasks.get(taskId) : Promise.resolve(undefined), [taskId]);
+  const event = useLiveQuery(() => eventId ? db.events.get(eventId) : Promise.resolve(undefined), [eventId]);
   const priorities = useLiveQuery(() => db.priorities.toArray());
+  
+  const currentItem = isEvent ? event : task;
   
   const [newNote, setNewNote] = useState('');
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [tempReminder, setTempReminder] = useState(new Date().toISOString());
   
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Shared edit state
   const [editTitle, setEditTitle] = useState('');
-  const [editDeadline, setEditDeadline] = useState('');
+  const [editDate, setEditDate] = useState('');
   const [editLink, setEditLink] = useState('');
+  
+  // Task specific
   const [editLabels, setEditLabels] = useState('');
   const [editPriority, setEditPriority] = useState(2);
+  
+  // Event specific
+  const [editDuration, setEditDuration] = useState(60);
 
   useEffect(() => {
-    if (task) {
-      setEditTitle(task.title);
-      setEditDeadline(task.deadline || '');
-      setEditLink(task.link || '');
-      setEditLabels(task.labels?.join(', ') || '');
-      setEditPriority(task.priority || 2);
+    if (currentItem) {
+      setEditTitle(currentItem.title);
+      setEditLink(currentItem.link || '');
+      
+      if (isEvent && event) {
+        setEditDate(event.date);
+        setEditDuration(event.duration);
+      } else if (task) {
+        setEditDate(task.deadline || '');
+        setEditLabels(task.labels?.join(', ') || '');
+        setEditPriority(task.priority || 2);
+      }
     }
-  }, [task, isEditing]);
+  }, [currentItem, isEditing]);
 
   const addNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim() || !task) return;
+    if (!newNote.trim() || !currentItem) return;
 
     const note: Note = {
       id: crypto.randomUUID(),
@@ -45,32 +65,59 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
       createdAt: Date.now()
     };
 
-    const updates: any = {
-      notes: [...(task.notes || []), note]
-    };
+    const notes = [...(currentItem.notes || []), note];
 
-    if (showReminderPicker) {
-      updates.reminder = tempReminder;
+    if (isEvent) {
+      await db.events.update(currentId, { notes });
+    } else {
+      const updates: any = { notes };
+      if (showReminderPicker) {
+        updates.reminder = tempReminder;
+      }
+      await db.tasks.update(currentId, updates);
     }
 
-    await db.tasks.update(taskId, updates);
     setNewNote('');
     setShowReminderPicker(false);
   };
 
   const clearReminder = async () => {
-    await db.tasks.update(taskId, { reminder: undefined });
+    if (!isEvent) {
+      await db.tasks.update(currentId, { reminder: undefined });
+    }
   };
 
-  const handleUpdateTask = async () => {
-    if (!task || !editTitle.trim()) return;
-    await db.tasks.update(taskId, {
-      title: editTitle.trim(),
-      deadline: editDeadline,
-      link: editLink.trim(),
-      priority: editPriority,
-      labels: editLabels.split(',').map(l => l.trim()).filter(l => l)
-    });
+  const handleDelete = async () => {
+    const typeLabel = isEvent ? 'رویداد' : 'کار';
+    if (confirm(`آیا از حذف این ${typeLabel} اطمینان دارید؟ این عمل غیرقابل بازگشت است.`)) {
+      if (isEvent) {
+        await db.events.delete(currentId);
+      } else {
+        await db.tasks.delete(currentId);
+      }
+      onClose();
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!currentItem || !editTitle.trim()) return;
+    
+    if (isEvent) {
+      await db.events.update(currentId, {
+        title: editTitle.trim(),
+        date: editDate,
+        duration: editDuration,
+        link: editLink.trim()
+      });
+    } else {
+      await db.tasks.update(currentId, {
+        title: editTitle.trim(),
+        deadline: editDate,
+        link: editLink.trim(),
+        priority: editPriority,
+        labels: editLabels.split(',').map(l => l.trim()).filter(l => l)
+      });
+    }
     setIsEditing(false);
   };
 
@@ -84,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
     } catch { return iso; }
   };
 
-  if (!task) return null;
+  if (!currentItem) return null;
 
   return (
     <div className="absolute inset-y-0 left-0 w-full sm:w-[480px] bg-white shadow-2xl border-r border-slate-200 z-50 flex flex-col animate-in slide-in-from-left duration-300">
@@ -94,42 +141,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
             {isEditing ? (
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 mr-1">عنوان کار</label>
+                  <label className="text-[11px] font-bold text-slate-500 mr-1">عنوان {isEvent ? 'رویداد' : 'کار'}</label>
                   <input type="text" autoFocus value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full text-base font-bold text-slate-800 bg-white border border-indigo-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 mr-1">مهلت انجام (شمسی)</label>
-                    <JalaliDatePicker initialDate={editDeadline} onChange={setEditDeadline} />
+                    <label className="text-[11px] font-bold text-slate-500 mr-1">تاریخ (شمسی)</label>
+                    <JalaliDatePicker initialDate={editDate} onChange={setEditDate} withTime={isEvent} />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-slate-500 mr-1">اولویت</label>
-                    <select 
-                      value={editPriority} 
-                      onChange={(e) => setEditPriority(Number(e.target.value))}
-                      className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
-                    >
-                      {priorities?.sort((a,b)=>a.id-b.id).map(p => (
-                        <option key={p.id} value={p.id}>{p.label}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {isEvent ? (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 mr-1">مدت (دقیقه)</label>
+                      <input type="number" step="5" value={editDuration} onChange={(e) => setEditDuration(Number(e.target.value))} className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" />
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-500 mr-1">اولویت</label>
+                      <select 
+                        value={editPriority} 
+                        onChange={(e) => setEditPriority(Number(e.target.value))}
+                        className="w-full text-xs font-bold bg-white border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
+                      >
+                        {priorities?.sort((a,b)=>a.id-b.id).map(p => (
+                          <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 mr-1">لیبل‌ها (با کاما جدا کنید)</label>
-                  <div className="relative">
-                    <Tag className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input 
-                      type="text" 
-                      value={editLabels} 
-                      onChange={(e) => setEditLabels(e.target.value)} 
-                      className="w-full text-xs pr-9 bg-white border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" 
-                      placeholder="فوری، خانه، پروژه..." 
-                    />
+                {!isEvent && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-500 mr-1">لیبل‌ها (با کاما جدا کنید)</label>
+                    <div className="relative">
+                      <Tag className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                      <input 
+                        type="text" 
+                        value={editLabels} 
+                        onChange={(e) => setEditLabels(e.target.value)} 
+                        className="w-full text-xs pr-9 bg-white border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all" 
+                        placeholder="فوری، خانه، پروژه..." 
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 mr-1">پیوند (لینک مرتبط)</label>
@@ -146,57 +202,72 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button onClick={handleUpdateTask} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"><Check className="w-4 h-4" /> ذخیره </button>
+                  <button onClick={handleUpdate} className={`flex-1 py-2.5 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg ${isEvent ? 'bg-violet-600 shadow-violet-100' : 'bg-indigo-600 shadow-indigo-100'}`}><Check className="w-4 h-4" /> ذخیره </button>
+                  <button onClick={handleDelete} className="px-4 py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl transition-colors" title="حذف دائمی"><Trash2 className="w-5 h-5" /></button>
                   <button onClick={() => setIsEditing(false)} className="px-6 py-2.5 bg-slate-200 text-slate-600 rounded-xl text-sm font-bold">انصراف</button>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 group">
-                  <h2 className="text-xl font-black text-slate-800 leading-tight">{task.title}</h2>
-                  <button onClick={() => setIsEditing(true)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Edit3 className="w-5 h-5" /></button>
+                  <div className="flex items-center gap-2">
+                    {isEvent && <Video className="w-5 h-5 text-violet-500" />}
+                    <h2 className="text-xl font-black text-slate-800 leading-tight">{currentItem.title}</h2>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setIsEditing(true)} className={`p-2 rounded-xl transition-all ${isEvent ? 'text-violet-400 hover:text-violet-600 hover:bg-violet-50' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}><Edit3 className="w-5 h-5" /></button>
+                    <button onClick={handleDelete} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="حذف"><Trash2 className="w-5 h-5" /></button>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">تاریخ درج</span>
-                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold"><Clock className="w-4 h-4 text-indigo-500" />{getJalaliFull(new Date(task.createdAt).toISOString())}</div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">تاریخ {isEvent ? 'شروع' : 'درج'}</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-600 font-bold"><Clock className={`w-4 h-4 ${isEvent ? 'text-violet-500' : 'text-indigo-500'}`} />{getJalaliFull(isEvent ? event?.date : new Date(task?.createdAt || 0).toISOString())}</div>
                   </div>
                   <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">مهلت (ددلاین)</span>
-                    <div className="flex items-center gap-2 text-xs text-slate-700 font-black"><Calendar className="w-4 h-4 text-rose-500" />{task.deadline ? getJalaliFull(task.deadline).split('،')[0] : 'ندارد'}</div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{isEvent ? 'مدت زمان' : 'مهلت (ددلاین)'}</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-700 font-black">
+                      {isEvent ? (
+                        <><Timer className="w-4 h-4 text-violet-500" />{event?.duration} دقیقه</>
+                      ) : (
+                        <><Calendar className="w-4 h-4 text-rose-500" />{task?.deadline ? getJalaliFull(task.deadline).split('،')[0] : 'ندارد'}</>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex-1 min-w-[120px]">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">اولویت</span>
-                    <div className="flex items-center gap-2 text-xs text-slate-700 font-bold">
-                      <Sliders className="w-4 h-4 text-indigo-500" />
-                      {priorities?.find(p => p.id === task.priority)?.label || 'تعریف نشده'}
-                    </div>
-                  </div>
-                  {task.labels && task.labels.length > 0 && (
-                    <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex-[2] min-w-[180px]">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">لیبل‌ها</span>
-                      <div className="flex flex-wrap gap-1">
-                        {task.labels.map(l => (
-                          <span key={l} className="text-[9px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md border border-slate-200">
-                            {l}
-                          </span>
-                        ))}
+                {!isEvent && (
+                  <div className="flex flex-wrap gap-2">
+                    <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex-1 min-w-[120px]">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">اولویت</span>
+                      <div className="flex items-center gap-2 text-xs text-slate-700 font-bold">
+                        <Sliders className="w-4 h-4 text-indigo-500" />
+                        {priorities?.find(p => p.id === task?.priority)?.label || 'تعریف نشده'}
                       </div>
                     </div>
-                  )}
-                </div>
+                    {task?.labels && task.labels.length > 0 && (
+                      <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex-[2] min-w-[180px]">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">لیبل‌ها</span>
+                        <div className="flex flex-wrap gap-1">
+                          {task.labels.map(l => (
+                            <span key={l} className="text-[9px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md border border-slate-200">
+                              {l}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                {task.link && (
+                {currentItem.link && (
                   <div className="mt-2">
                     <a 
-                      href={task.link.startsWith('http') ? task.link : `https://${task.link}`} 
+                      href={currentItem.link.startsWith('http') ? currentItem.link : `https://${currentItem.link}`} 
                       target="_blank" 
                       rel="noopener noreferrer" 
-                      className="flex items-center justify-center gap-2 w-full py-3.5 bg-indigo-50 text-indigo-700 rounded-2xl text-xs font-black border border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 transition-all shadow-sm active:scale-[0.98]"
+                      className={`flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl text-xs font-black border transition-all shadow-sm active:scale-[0.98] ${isEvent ? 'bg-violet-50 text-violet-700 border-violet-100 hover:bg-violet-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'}`}
                     >
                       <ExternalLink className="w-4 h-4" />
                       مشاهده پیوند مرتبط
@@ -204,7 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
                   </div>
                 )}
 
-                {task.reminder && (
+                {!isEvent && task?.reminder && (
                   <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between group/rem">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-amber-200">
@@ -230,9 +301,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
           <History className="w-4 h-4" />
           <span className="text-[10px] font-black uppercase tracking-[0.2em]">یادداشت‌ها و تاریخچه</span>
         </div>
-        {task.notes && task.notes.length > 0 ? (
+        {currentItem.notes && currentItem.notes.length > 0 ? (
           <div className="space-y-5">
-            {task.notes.sort((a, b) => b.createdAt - a.createdAt).map((note) => (
+            {currentItem.notes.sort((a, b) => b.createdAt - a.createdAt).map((note) => (
               <div key={note.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl shadow-sm"><p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">{note.content}</p><div className="mt-4 flex items-center text-[10px] text-slate-400 font-bold"><Clock className="w-3 h-3 ml-1" />{new Date(note.createdAt).toLocaleString('fa-IR')}</div></div>
             ))}
           </div>
@@ -245,10 +316,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
         <form onSubmit={addNote} className="space-y-4">
           <div className="relative">
             <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="یادداشت جدید..." className="w-full pr-4 pl-14 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm min-h-[100px] resize-none font-medium" />
-            <button type="button" onClick={() => setShowReminderPicker(!showReminderPicker)} className={`absolute left-4 top-4 p-2.5 rounded-xl transition-all ${showReminderPicker ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`} title="افزودن یادآوری"><Bell className="w-5 h-5" /></button>
+            {!isEvent && (
+              <button type="button" onClick={() => setShowReminderPicker(!showReminderPicker)} className={`absolute left-4 top-4 p-2.5 rounded-xl transition-all ${showReminderPicker ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`} title="افزودن یادآوری"><Bell className="w-5 h-5" /></button>
+            )}
           </div>
           
-          {showReminderPicker && (
+          {!isEvent && showReminderPicker && (
             <div className="p-4 bg-white rounded-2xl border border-amber-200 shadow-lg animate-in slide-in-from-bottom-2 duration-200">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-black text-amber-600 flex items-center gap-2"><BellRing className="w-4 h-4" /> تنظیم زمان یادآوری</span>
@@ -258,7 +331,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ taskId, onClose }) => {
             </div>
           )}
 
-          <button type="submit" disabled={!newNote.trim()} className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2"><Send className="w-5 h-5" /> ثبت یادداشت {showReminderPicker && 'و یادآوری'}</button>
+          <button type="submit" disabled={!newNote.trim()} className={`w-full py-3.5 text-white rounded-2xl font-bold disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2 ${isEvent ? 'bg-violet-600 hover:bg-violet-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}><Send className="w-5 h-5" /> ثبت یادداشت {!isEvent && showReminderPicker && 'و یادآوری'}</button>
         </form>
       </div>
     </div>
